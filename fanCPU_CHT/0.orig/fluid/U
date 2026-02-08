@@ -1,0 +1,177 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O  peration    | Version:  v2406                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volVectorField;
+    object      U;
+}
+
+dimensions      [0 1 -1 0 0 0 0];
+
+internalField   uniform (0 0 0);
+
+boundaryField
+{
+    inlet
+    {
+        type            fixedValue;
+        value           uniform (0 0 0);
+    }
+
+    fan
+    {
+        type            codedFixedValue;
+        value           uniform (0 0 0);
+        name            simpleFanEducational;
+
+        code
+        #{
+            // ==========================================================
+            // STEP 1: DEFINE FAN GEOMETRY
+            // ==========================================================
+
+            const scalar fanRadius = 0.025;
+            const vector fanCenter(0, 0.040, 0.040);
+            const scalar pi = constant::mathematical::pi;
+
+            // Hub parameters
+            const scalar hubRatio = 0.30;
+            const scalar hubRadius = hubRatio * fanRadius;
+            const scalar fanArea = pi * (fanRadius*fanRadius - hubRadius*hubRadius);
+
+
+            // ==========================================================
+            // STEP 2: OPERATING PARAMETERS
+            // ==========================================================
+
+            const scalar Q_max = 0.0075;      // Maximum flow rate [m^3/s]
+            const scalar dP_max = 30.0;       // Maximum pressure rise [Pa]
+            const scalar dP_system = 5.0;     // System pressure drop [Pa]
+
+
+            // ==========================================================
+            // STEP 3: COMPUTE THE OPERATING FLOW RATE
+            // ==========================================================
+
+            scalar Q_operating = Q_max * (1.0 - dP_system / dP_max);
+            Q_operating = max(Q_operating, 0.001);
+            const scalar U_mean = Q_operating / fanArea;
+
+
+            // ==========================================================
+            // STEP 4: STARTUP RAMP
+            // ==========================================================
+
+            const scalar t = this->db().time().value();
+            const scalar t_ramp = 0.5;
+
+            scalar rampFactor = 1.0;
+            if (t < t_ramp)
+            {
+                rampFactor = t / t_ramp;
+            }
+
+            const scalar U_instantaneous = rampFactor * U_mean;
+
+
+            // ==========================================================
+            // STEP 5: SWIRL PARAMETERS (ROTATION)
+            // ==========================================================
+
+            const scalar swirlAngle_deg = 10.0;
+            const scalar swirlAngle = swirlAngle_deg * pi / 180.0;
+
+
+            // ==========================================================
+            // STEP 6: DEBUG OUTPUT
+            // ==========================================================
+
+            if (Pstream::master())
+            {
+                if (this->db().time().timeIndex() % 50 == 0)
+                {
+                    Info << "\n";
+                    Info << "===== EDUCATIONAL FAN MODEL =====" << endl;
+                    Info << "  Time:       " << t << " s" << endl;
+                    Info << "  Ramp:       " << rampFactor * 100 << " %" << endl;
+                    Info << "  Flow rate:  " << Q_operating * 1000 << " L/s" << endl;
+                    Info << "  U mean:     " << U_instantaneous << " m/s" << endl;
+                    Info << "  Swirl:      " << swirlAngle_deg << " deg" << endl;
+                    Info << "=================================" << endl;
+                    Info << "\n";
+                }
+            }
+
+
+            // ==========================================================
+            // STEP 7: COMPUTE VELOCITY ON EACH FACE
+            // ==========================================================
+
+            const vectorField& faceCenters = patch().Cf();
+            vectorField& field = *this;
+
+            forAll(faceCenters, i)
+            {
+                // Compute radial position
+                const scalar dy = faceCenters[i].y() - fanCenter.y();
+                const scalar dz = faceCenters[i].z() - fanCenter.z();
+                const scalar r = Foam::sqrt(dy*dy + dz*dz);
+
+                // Hub zone - zero velocity
+                if (r < hubRadius)
+                {
+                    field[i] = vector(0, 0, 0);
+                    continue;
+                }
+
+                // Normalized radius in the annulus
+                scalar r_star = (r - hubRadius) / (fanRadius - hubRadius);
+                r_star = max(0.0, min(r_star, 1.0));
+
+                // Axial velocity profile (parabolic)
+                scalar U_axial = 4.0 * U_instantaneous * r_star * (1.0 - r_star);
+                U_axial = max(U_axial, 0.0);
+
+                // Tangential velocity (swirl)
+                scalar U_tangential = U_axial * Foam::tan(swirlAngle);
+
+                vector tangentDir(0, 0, 0);
+                if (r > 1e-6)
+                {
+                    tangentDir = vector(0, -dz/r, dy/r);
+                }
+
+                // Assemble the velocity vector
+                vector axialDir(1, 0, 0);
+                field[i] = U_axial * axialDir + U_tangential * tangentDir;
+            }
+
+        #};
+    }
+
+    outlet
+    {
+        type            pressureInletOutletVelocity;
+        value           uniform (0 0 0);
+    }
+
+    walls
+    {
+        type            noSlip;
+    }
+
+    "fluid_to_.*"
+    {
+        type            noSlip;
+    }
+}
+
+// ************************************************************************* //
+

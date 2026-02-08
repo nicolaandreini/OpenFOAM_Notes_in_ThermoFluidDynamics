@@ -1,0 +1,78 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O  peration    | Version:  v2406                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      topoSetDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+actions
+(
+    // ========== SOLID REGION (processor) ==========
+    // Processor cube: 20x20x20 mm at x=100-120, y=30-50, z=30-50
+    {
+        name    solidCellSet;
+        type    cellSet;
+        action  new;
+        source  boxToCell;
+        box     (0.100 0.030 0.030) (0.120 0.050 0.050);
+    }
+    {
+        name    solid;
+        type    cellZoneSet;
+        action  new;
+        source  setToCellZone;
+        set     solidCellSet;
+    }
+
+    // ========== FLUID REGION ==========
+    // Start with all cells
+    {
+        name    fluidCellSet;
+        type    cellSet;
+        action  new;
+        source  boxToCell;
+        box     (-1 -1 -1) (1 1 1);  // All cells in domain
+    }
+    // Remove solid cells from fluid
+    {
+        name    fluidCellSet;
+        type    cellSet;
+        action  delete;
+        source  cellToCell;
+        set     solidCellSet;
+    }
+    {
+        name    fluid;
+        type    cellZoneSet;
+        action  new;
+        source  setToCellZone;
+        set     fluidCellSet;
+    }
+
+    // ========== FAN PATCH ==========
+    // Circular face set on the inlet plane (x=0)
+    // centered at (y=40mm, z=40mm) with radius 25mm
+    {
+        name    fanFaceSet;
+        type    faceSet;
+        action  new;
+        source  cylinderToFace;
+        sourceInfo
+        {
+            point1  (-0.001 0.040 0.040);
+            point2  (0.001 0.040 0.040);
+            radius  0.025;
+        }
+    }
+);
+
+// ************************************************************************* //

@@ -1,0 +1,78 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O  peration    | Version:  v2406                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      blockMeshDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+scale   0.001;
+
+// Domain: 250 x 80 x 80 mm
+// Processor cube: 20x20x20 mm at center (100-120, 30-50, 30-50)
+
+vertices
+(
+    // Main domain
+    (0   0   0)     // 0
+    (250 0   0)     // 1
+    (250 80  0)     // 2
+    (0   80  0)     // 3
+    (0   0   80)    // 4
+    (250 0   80)    // 5
+    (250 80  80)    // 6
+    (0   80  80)    // 7
+);
+
+blocks
+(
+    // Single block - regions will be defined by topoSet
+    hex (0 1 2 3 4 5 6 7) (100 32 32) simpleGrading (1 1 1)
+);
+
+edges
+(
+);
+
+boundary
+(
+    inlet
+    {
+        type wall;
+        faces
+        (
+            (0 4 7 3)
+        );
+    }
+
+    outlet
+    {
+        type patch;
+        faces
+        (
+            (1 2 6 5)
+        );
+    }
+
+    walls
+    {
+        type wall;
+        faces
+        (
+            (0 1 5 4)
+            (3 7 6 2)
+            (0 3 2 1)
+            (4 5 6 7)
+        );
+    }
+);
+
+// ************************************************************************* //

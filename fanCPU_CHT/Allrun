@@ -1,0 +1,85 @@
+#!/bin/bash
+#------------------------------------------------------------------------------
+# Allrun script for Fan-Cooled CPU - CHT Case
+# OpenFOAM v2406 - chtMultiRegionFoam
+#
+# This script runs the complete simulation pipeline:
+#   1. Generate the mesh                    (blockMesh)
+#   2. Define fluid/solid zones + fan faces (topoSet)
+#   3. Create the fan patch from face set   (createPatch)
+#   4. Copy initial conditions from 0.orig  (cp)
+#   5. Split mesh into fluid/solid regions  (splitMeshRegions)
+#   6. Run the CHT solver                   (chtMultiRegionFoam)
+#
+#------------------------------------------------------------------------------
+
+cd "${0%/*}" || exit 1
+. ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions
+
+#------------------------------------------------------------------------------
+
+echo "========================================"
+echo " Fan-Cooled CPU - CHT Simulation"
+echo " OpenFOAM v2406"
+echo "========================================"
+echo ""
+
+# ---- Step 1: Create base mesh ----
+echo "Step 1/6: Creating base mesh (blockMesh)..."
+runApplication blockMesh
+echo "  -> Done. Mesh: 100x32x32 cells"
+echo ""
+
+# ---- Step 2: Define cell zones and face sets ----
+echo "Step 2/6: Defining cell zones and face sets (topoSet)..."
+runApplication topoSet
+echo "  -> Done. Zones: solid (CPU), fluid (air), fanFaceSet"
+echo ""
+
+# ---- Step 3: Create fan patch from face set ----
+echo "Step 3/6: Creating fan patch (createPatch)..."
+runApplication createPatch -overwrite
+echo "  -> Done. Fan patch carved from inlet wall"
+echo ""
+
+# ---- Step 4: Copy initial/boundary conditions ----
+echo "Step 4/6: Setting up initial fields from 0.orig/..."
+rm -rf 0
+cp -r 0.orig 0
+echo "  -> Done. Fields: U, T, p, p_rgh, alphat (fluid) + T, p (solid)"
+echo ""
+
+# ---- Step 5: Split mesh into regions ----
+echo "Step 5/6: Splitting mesh into fluid and solid regions..."
+runApplication splitMeshRegions -cellZones -overwrite
+echo "  -> Done. Regions: fluid, solid"
+echo ""
+
+# Remove the global polyMesh (each region now has its own)
+rm -rf constant/polyMesh
+
+# ---- Step 6: Run solver ----
+echo "Step 6/6: Running chtMultiRegionFoam (end time = 5 s)..."
+runApplication chtMultiRegionFoam
+echo "  -> Done."
+echo ""
+
+#------------------------------------------------------------------------------
+
+echo "========================================"
+echo " CHT Simulation Complete!"
+echo "========================================"
+echo ""
+echo " Post-processing data in: postProcessing/"
+echo "   - solidTmax/         Max CPU temperature vs time"
+echo "   - solidTavg/         Avg CPU temperature vs time"
+echo "   - fanMassFlow/       Fan mass flow rate vs time"
+echo "   - interfaceHeatFlux/ Heat flux at CPU-air interface"
+echo "   - fluidTmax/         Max fluid temperature vs time"
+echo ""
+echo " To visualize in ParaView:"
+echo "   paraFoam -region fluid"
+echo "   paraFoam -region solid"
+echo ""
+
+#------------------------------------------------------------------------------

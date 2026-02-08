@@ -1,0 +1,125 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2406                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      fvOptions;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+/*
+    Time-varying heat source using scalarCodedSource
+
+    Input data:
+    - Total chip power: 10 W
+    - Ramp time: 2 s (linear ramp from 0 to full power)
+
+    The power density is computed automatically from the total
+    cell volume at runtime.
+*/
+
+heaterSource
+{
+    type            scalarCodedSource;
+    selectionMode   all;
+    fields          (h);
+    name            timeVaryingHeatSource;
+
+    // -------------------------------------------------------------------------
+    // codeInclude: Add #include directives for additional headers
+    // -------------------------------------------------------------------------
+    codeInclude
+    #{
+    #};
+
+    // -------------------------------------------------------------------------
+    // codeCorrect: Post-solution corrections applied after each iteration
+    // -------------------------------------------------------------------------
+    codeCorrect
+    #{
+    #};
+
+    // -------------------------------------------------------------------------
+    // codeConstrain: Apply constraints to the matrix before solving
+    // -------------------------------------------------------------------------
+    codeConstrain
+    #{
+    #};
+
+    // -------------------------------------------------------------------------
+    // codeAddSupRho: Add source terms to the equation (density-weighted)
+    // -------------------------------------------------------------------------
+    codeAddSupRho
+    #{
+        // Access cell volumes
+        const scalarField& V = mesh_.V();
+
+        // Access equation source term
+        scalarField& heSource = eqn.source();
+
+        // Access current simulation time
+        const scalar t = mesh_.time().value();
+
+        // -----------------------------------------------------------------
+        // Input parameters
+        // -----------------------------------------------------------------
+        const scalar totalPower = 10.0;    // [W] total chip power
+        const scalar rampTime = 2.0;       // [s] ramp duration
+
+
+        // Compute total volume of the source region
+        // NOTE: reduce() is needed for correct results in parallel runs
+        scalar totalVolume = 0.0;
+        forAll(V, i)
+        {
+            totalVolume += V[i];
+        }
+        reduce(totalVolume, sumOp<scalar>());
+
+        // Compute power density from total power
+        const scalar maxPowerDensity = totalPower / totalVolume;  // [W/m^3]
+
+        // -----------------------------------------------------------------
+        // Compute current power density based on time ramp
+        // -----------------------------------------------------------------
+        scalar currentPowerDensity = 0.0;
+
+        if (t < rampTime)
+        {
+            // Linear ramp
+            currentPowerDensity = maxPowerDensity * t / rampTime;
+        }
+        else
+        {
+            // Constant value after ramp
+            currentPowerDensity = maxPowerDensity;
+        }
+
+        // -----------------------------------------------------------------
+        // Apply source to all cells
+        // -----------------------------------------------------------------
+        forAll(heSource, i)
+        {
+            heSource[i] -= currentPowerDensity * V[i];
+        }
+
+        // Debug output (only from master processor)
+        if (Pstream::master())
+        {
+            Info << "Heat source | Time: " << t << " s"
+                 << " | Power density: " << currentPowerDensity << " W/m^3"
+                 << " | Total volume: " << totalVolume << " m^3"
+                 << " | Total power: " << currentPowerDensity * totalVolume
+                 << " W" << endl;
+        }
+    #};
+}
+
+// ************************************************************************* //
